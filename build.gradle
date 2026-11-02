@@ -1,0 +1,53 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+}
+
+// Suffixe du .jar : ex. cobblemon-undo-1.0.0+cobblemon1.7.jar
+def cobblemonTag = project.findProperty('cobblemon_tag') ?: project.cobblemon_version.tokenize('+')[0]
+version = "${project.mod_version}+cobblemon${cobblemonTag}"
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    // Dépôt officiel où l'équipe Cobblemon publie ses versions
+    maven {
+        name = 'Cobblemon'
+        url = 'https://maven.impactdev.net/repository/development/'
+    }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Cobblemon : uniquement pour compiler (le joueur l'a déjà dans son dossier mods)
+    modCompileOnly("com.cobblemon:fabric:${project.cobblemon_version}") {
+        transitive = false
+    }
+    // Cobblemon est écrit en Kotlin : ses signatures (ex. ModelWidget) référencent la stdlib Kotlin
+    compileOnly "org.jetbrains.kotlin:kotlin-stdlib:${project.kotlin_stdlib_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filteringCharset = 'UTF-8'
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}

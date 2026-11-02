@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "feurinfo",
+  "version": "${version}",
+  "name": "Feurinfo",
+  "description": "Commande /feurinfo <pokémon> : affiche le modèle 3D du Pokémon (formes, shiny) et toutes ses attaques (niveau, CT, œufs, tuteur). 100 % côté client, utilise les données de ton Cobblemon.",
+  "authors": ["Goat"],
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.goat.feurinfo.FeurinfoClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "cobblemon": ">=1.8.0"
+  }
+}

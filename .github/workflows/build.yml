@@ -1,0 +1,73 @@
+name: Compiler le mod
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Les commits faits par le robot (jar / logs) ne relancent pas de compilation
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Trouver la dernière version de Cobblemon 1.8.x
+        id: cobblemon
+        run: |
+          META_URL="https://maven.impactdev.net/repository/development/com/cobblemon/fabric/maven-metadata.xml"
+          curl -fsSL "$META_URL" | grep -o '<version>[^<]*</version>' | sed -e 's/<version>//' -e 's/<\/version>//' > /tmp/versions.txt || true
+          V=$(grep -E '^1\.8\.[0-9]+\+1\.21\.1$' /tmp/versions.txt | sort -V | tail -n 1 || true)
+          if [ -z "$V" ]; then V=$(grep -E '^1\.8\.[0-9]+\+1\.21\.1' /tmp/versions.txt | sort -V | tail -n 1 || true); fi
+          if [ -z "$V" ]; then V="1.8.4+1.21.1"; echo "::warning::Version non trouvée, essai avec $V"; fi
+          echo "Version utilisée : $V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Compiler
+        run: |
+          set -o pipefail
+          gradle build --stacktrace -Pcobblemon_version="${{ steps.cobblemon.outputs.version }}" -Pcobblemon_tag="1.8" 2>&1 | tee /tmp/build.log
+
+      - name: Mettre le .jar dans le dossier "telechargement" du dépôt
+        run: |
+          mkdir -p telechargement
+          rm -f telechargement/*.jar
+          for f in build/libs/*.jar; do case "$f" in *-sources.jar) ;; *) cp "$f" telechargement/;; esac; done
+          echo "Compilation réussie (essai n°${{ github.run_number }}) le $(date -u '+%Y-%m-%d %H:%M UTC')" > telechargement/statut.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add telechargement
+          git commit -q -m "Nouveau .jar compilé (essai n°${{ github.run_number }})" || exit 0
+          for i in 1 2 3; do
+            if git push; then exit 0; fi
+            sleep 5
+            git fetch -q origin "${GITHUB_REF_NAME}"
+            if git diff --quiet HEAD "origin/${GITHUB_REF_NAME}" -- telechargement; then echo "Déjà envoyé"; exit 0; fi
+            git pull -q --rebase origin "${GITHUB_REF_NAME}" || true
+          done
+          exit 1
+
+      - name: Enregistrer l'erreur de compilation
+        if: failure()
+        run: |
+          touch /tmp/build.log
+          mkdir -p ci
+          { echo "ECHEC essai n°${{ github.run_number }}"; echo; grep -nE "error:|FAILURE|What went wrong|Could not" /tmp/build.log | head -n 120; echo; echo "----- fin du log -----"; tail -n 150 /tmp/build.log; } > "ci/erreur-${{ github.run_number }}.txt"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci
+          git commit -q -m "Log d'erreur (essai n°${{ github.run_number }})" || true
+          for i in 1 2 3; do git pull -q --rebase origin "${GITHUB_REF_NAME}" || true; if git push; then break; fi; sleep 5; done
