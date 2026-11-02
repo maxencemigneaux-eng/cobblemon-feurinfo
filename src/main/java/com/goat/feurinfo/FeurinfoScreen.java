@@ -8,6 +8,7 @@ import com.cobblemon.mod.common.client.gui.summary.widgets.ModelWidget;
 import com.cobblemon.mod.common.pokemon.FormData;
 import com.cobblemon.mod.common.pokemon.RenderablePokemon;
 import com.cobblemon.mod.common.pokemon.Species;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
@@ -16,6 +17,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
@@ -42,7 +44,13 @@ import java.util.TreeMap;
 public final class FeurinfoScreen extends Screen {
     private static final int MARGIN = 8;
     private static final int TOP = 30;
-    private static final int ROW_H = 12;
+    private static final int ROW_H = 16;
+    /** Icônes rondes des types de Cobblemon : 18 icônes de 36 x 36 px côte à côte. */
+    private static final ResourceLocation TYPE_ICONS = ResourceLocation.fromNamespaceAndPath("cobblemon", "textures/gui/types.png");
+    private static final int TYPE_ICON_SRC = 36;
+    private static final int TYPE_ICON_SHEET_W = 648;
+    private static final int TYPE_ICON = 14;
+    private static final int TYPE_COL_W = 24;
 
     private enum Tab {
         LEVEL("level"), TM("tm"), EGG("egg"), TUTOR("tutor"), EVOLUTION("evolution"), OTHER("other");
@@ -556,7 +564,7 @@ public final class FeurinfoScreen extends Screen {
         int accRight = ppRight - 24;
         int powRight = accRight - 34;
         int catX = powRight - 34 - 58;
-        int typeX = (showCategory ? catX : powRight - 34) - 56;
+        int typeX = (showCategory ? catX : powRight - 34) - TYPE_COL_W - 2;
         int nameX = x0 + (showLevel ? (searching ? 48 : 26) : 0);
 
         // Nombre d'attaques, à droite de la barre de recherche
@@ -604,18 +612,23 @@ public final class FeurinfoScreen extends Screen {
             } else if ((scroll + i) % 2 == 1) {
                 graphics.fill(x0 - 2, y, x1 + 2, y + ROW_H, 0x14FFFFFF);
             }
-            int rgb = row.move().getElementalType().getHue() & 0xFFFFFF;
-            graphics.fill(typeX, y + 1, typeX + 52, y + ROW_H - 1, 0xFF000000 | rgb);
         }
-        // On dessine les fonds maintenant, pour que le texte passe bien par-dessus
+        // On dessine les fonds maintenant, pour que les icônes et le texte passent par-dessus
         graphics.flush();
+
+        // Icônes de type (celles de Cobblemon)
+        int iconX = typeX + (TYPE_COL_W - TYPE_ICON) / 2;
+        for (int i = 0; i < shown; i++) {
+            int y = listTop + i * ROW_H;
+            drawTypeIcon(graphics, list.get(scroll + i).move().getElementalType(), iconX, y + (ROW_H - TYPE_ICON) / 2);
+        }
 
         // 2e passage : les textes
         for (int i = 0; i < shown; i++) {
             Row row = list.get(scroll + i);
             MoveTemplate move = row.move();
             int y = listTop + i * ROW_H;
-            int textY = y + 2;
+            int textY = y + (ROW_H - 8) / 2;
             if (showLevel) {
                 graphics.drawString(font, row.level(), x0, textY, 0xFFFFD866, false);
             }
@@ -625,7 +638,6 @@ public final class FeurinfoScreen extends Screen {
                 name = font.plainSubstrByWidth(name, Math.max(0, maxNameW - font.width("…"))) + "…";
             }
             graphics.drawString(font, name, nameX, textY, 0xFFFFFFFF, false);
-            drawTypeName(graphics, move.getElementalType(), typeX, y + 2, 52);
             if (showCategory) {
                 DamageCategory category = move.getDamageCategory();
                 graphics.drawString(font, category.getDisplayName(), catX, textY, categoryColor(category), false);
@@ -651,6 +663,9 @@ public final class FeurinfoScreen extends Screen {
             MoveTemplate move = hovered.move();
             List<FormattedCharSequence> lines = new ArrayList<>();
             lines.add(move.getDisplayName().copy().withStyle(ChatFormatting.BOLD).getVisualOrderText());
+            int typeColor = move.getElementalType().getHue() & 0xFFFFFF;
+            lines.add(Component.translatable("feurinfo.tooltip.type", move.getElementalType().getDisplayName())
+                    .withStyle(style -> style.withColor(typeColor)).getVisualOrderText());
             if (!showCategory) {
                 int color = categoryColor(move.getDamageCategory()) & 0xFFFFFF;
                 lines.add(move.getDamageCategory().getDisplayName().copy()
@@ -669,16 +684,12 @@ public final class FeurinfoScreen extends Screen {
         graphics.drawString(font, text, right - font.width(text), y, color, false);
     }
 
-    /** Nom du type, en noir sur les couleurs claires et en blanc sur les foncées. */
-    private void drawTypeName(GuiGraphics graphics, ElementalType type, int x, int y, int w) {
-        int rgb = type.getHue() & 0xFFFFFF;
-        int r = (rgb >> 16) & 0xFF;
-        int g = (rgb >> 8) & 0xFF;
-        int b = rgb & 0xFF;
-        int luminance = (r * 299 + g * 587 + b * 114) / 1000;
-        int textColor = luminance > 150 ? 0xFF202020 : 0xFFFFFFFF;
-        Component name = type.getDisplayName();
-        graphics.drawString(font, name, x + (w - font.width(name)) / 2, y, textColor, false);
+    /** Icône ronde du type, découpée dans la planche de Cobblemon (index = textureXMultiplier). */
+    private static void drawTypeIcon(GuiGraphics graphics, ElementalType type, int x, int y) {
+        int u = type.getTextureXMultiplier() * TYPE_ICON_SRC;
+        RenderSystem.enableBlend();
+        graphics.blit(TYPE_ICONS, x, y, TYPE_ICON, TYPE_ICON, u, 0, TYPE_ICON_SRC, TYPE_ICON_SRC, TYPE_ICON_SHEET_W, TYPE_ICON_SRC);
+        RenderSystem.disableBlend();
     }
 
     private static int categoryColor(DamageCategory category) {

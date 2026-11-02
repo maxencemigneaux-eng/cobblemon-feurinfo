@@ -17,7 +17,7 @@ n'importe quel serveur, même si personne d'autre ne l'a.
 - Bouton **★ Shiny** pour voir sa version chromatique.
 
 **À droite — les attaques**, par onglet : **Niveau**, **CT**, **Œufs**, **Tuteur**, **Évolution**, **Autres**.
-Pour chaque attaque : type, catégorie, puissance, précision, PP.
+Pour chaque attaque : icône du type (la même que dans Cobblemon), catégorie, puissance, précision, PP.
 **Survole** une attaque pour lire sa description. Molette pour défiler.
 
 **Chercher une attaque** : tape dans la barre « Chercher une attaque... » au-dessus de la liste

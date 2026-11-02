@@ -32,5 +32,6 @@
   "feurinfo.method.egg": "Œuf",
   "feurinfo.method.tutor": "Tuteur",
   "feurinfo.method.evolution": "Évo",
-  "feurinfo.method.other": "Autre"
+  "feurinfo.method.other": "Autre",
+  "feurinfo.tooltip.type": "Type : %s"
 }
