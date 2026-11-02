@@ -20,6 +20,11 @@ n'importe quel serveur, même si personne d'autre ne l'a.
 Pour chaque attaque : type, catégorie, puissance, précision, PP.
 **Survole** une attaque pour lire sa description. Molette pour défiler.
 
+**Chercher une attaque** : tape dans la barre « Chercher une attaque... » au-dessus de la liste
+(ex. `séisme`, `lance`, ou un type comme `feu`). La recherche se fait dans **toutes** les catégories
+à la fois, et la colonne **Méthode** indique comment le Pokémon l'apprend (Niv. 32, CT, Œuf, Tuteur...).
+La recherche reste active quand tu changes de Pokémon. Clique sur un onglet pour revenir à la liste normale.
+
 **En haut à droite — recherche** : tape un autre Pokémon puis **Entrée**.
 
 ## D'où viennent les données ?

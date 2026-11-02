@@ -65,6 +65,8 @@ public final class FeurinfoScreen extends Screen {
     private Tab tab = Tab.LEVEL;
     private final Map<Tab, List<Row>> rows = new EnumMap<>(Tab.class);
     private int scroll;
+    private String moveFilterText = "";
+    private final List<Row> filteredRows = new ArrayList<>();
     private String searchText = "";
     private Component searchError;
     private float rotation = 35F;
@@ -73,6 +75,7 @@ public final class FeurinfoScreen extends Screen {
 
     // --- Widgets ---
     private EditBox search;
+    private EditBox moveFilter;
     private ModelWidget model;
     private Button shinyButton;
     private final Map<Tab, Button> tabButtons = new EnumMap<>(Tab.class);
@@ -88,6 +91,7 @@ public final class FeurinfoScreen extends Screen {
     private int modelY;
     private int modelW;
     private int modelH;
+    private int filterY;
     private int listTop;
     private int listBottom;
 
@@ -163,6 +167,57 @@ public final class FeurinfoScreen extends Screen {
                 }
             }
         }
+        applyFilter();
+    }
+
+    // --- Recherche d'attaque dans la liste du Pokémon ---
+
+    private boolean filtering() {
+        return !SpeciesLookup.normalize(moveFilterText).isEmpty();
+    }
+
+    /** Quand on cherche, on regarde dans TOUTES les catégories (Niveau, CT, Œufs...). */
+    private void applyFilter() {
+        filteredRows.clear();
+        String query = SpeciesLookup.normalize(moveFilterText);
+        if (query.isEmpty()) {
+            return;
+        }
+        for (Tab t : Tab.values()) {
+            for (Row row : rows.get(t)) {
+                MoveTemplate move = row.move();
+                String local = SpeciesLookup.normalize(move.getDisplayName().getString());
+                String english = SpeciesLookup.normalize(move.getName());
+                String type = SpeciesLookup.normalize(move.getElementalType().getDisplayName().getString());
+                if (local.contains(query) || english.contains(query) || type.equals(query)) {
+                    filteredRows.add(new Row(methodLabel(t, row), move));
+                }
+            }
+        }
+    }
+
+    private static String methodLabel(Tab t, Row row) {
+        return switch (t) {
+            case LEVEL -> row.level().chars().allMatch(Character::isDigit)
+                    ? I18n.get("feurinfo.method.level", row.level())
+                    : row.level();
+            case TM -> I18n.get("feurinfo.method.tm");
+            case EGG -> I18n.get("feurinfo.method.egg");
+            case TUTOR -> I18n.get("feurinfo.method.tutor");
+            case EVOLUTION -> I18n.get("feurinfo.method.evolution");
+            case OTHER -> I18n.get("feurinfo.method.other");
+        };
+    }
+
+    private List<Row> currentRows() {
+        return filtering() ? filteredRows : rows.get(tab);
+    }
+
+    private void onMoveFilterChanged(String text) {
+        moveFilterText = text;
+        scroll = 0;
+        applyFilter();
+        updateTabButtons();
     }
 
     private void addSorted(Tab target, Collection<MoveTemplate> moves) {
@@ -216,7 +271,8 @@ public final class FeurinfoScreen extends Screen {
         modelY = panelY + 4;
         modelW = leftW - 8;
         modelH = Math.max(60, panelH - 4 - 52);
-        listTop = panelY + 36;
+        filterY = panelY + 24;
+        listTop = panelY + 58;
         listBottom = panelY + panelH - 4;
 
         int searchW = Math.min(170, width / 3);
@@ -256,6 +312,15 @@ public final class FeurinfoScreen extends Screen {
             tabButtons.put(t, addRenderableWidget(button));
             tabX += tabW + gap;
         }
+
+        // Barre de recherche d'attaque (cherche dans toutes les catégories du Pokémon)
+        moveFilter = new EditBox(font, rightX + 6, filterY, rightW - 12 - 72, 16, Component.translatable("feurinfo.filter.hint"));
+        moveFilter.setHint(Component.translatable("feurinfo.filter.hint").withStyle(ChatFormatting.DARK_GRAY));
+        moveFilter.setMaxLength(40);
+        moveFilter.setValue(moveFilterText);
+        moveFilter.setResponder(this::onMoveFilterChanged);
+        addRenderableWidget(moveFilter);
+        updateTabButtons();
     }
 
     private ModelWidget createModel() {
@@ -264,10 +329,13 @@ public final class FeurinfoScreen extends Screen {
             aspects.add("shiny");
         }
         RenderablePokemon renderable = new RenderablePokemon(species, aspects, ItemStack.EMPTY);
-        // Cobblemon utilise une échelle de 2.7 et un décalage de -12 pour une zone de 100 px de haut
-        float ratio = modelH / 100F;
+        // Cobblemon utilise une échelle de 2.7 et un décalage de -12 pour une zone de 118 x 100 px.
+        // On garde ces proportions (le plus petit des deux rapports, pour ne pas couper le Pokémon)
+        // et on centre verticalement dans la zone.
+        float ratio = Math.min(modelH / 100F, modelW / 118F);
+        double offsetY = -12.0 * ratio + (modelH - 100.0 * ratio) / 2.0;
         return new ModelWidget(modelX, modelY, modelW, modelH, renderable,
-                2.7F * ratio, rotation, -12.0 * ratio, true, false, 13);
+                2.7F * ratio, rotation, offsetY, true, false, 13);
     }
 
     private void replaceModel() {
@@ -309,11 +377,15 @@ public final class FeurinfoScreen extends Screen {
     private void selectTab(Tab t) {
         tab = t;
         scroll = 0;
+        if (moveFilter != null && filtering()) {
+            moveFilter.setValue(""); // cliquer un onglet quitte la recherche
+        }
         updateTabButtons();
     }
 
     private void updateTabButtons() {
-        tabButtons.forEach((t, button) -> button.active = t != tab);
+        boolean searching = filtering();
+        tabButtons.forEach((t, button) -> button.active = searching || t != tab);
     }
 
     private void onSearchChanged(String text) {
@@ -405,7 +477,7 @@ public final class FeurinfoScreen extends Screen {
     }
 
     private int maxScroll() {
-        return Math.max(0, rows.get(tab).size() - visibleRows());
+        return Math.max(0, currentRows().size() - visibleRows());
     }
 
     @Override
@@ -472,10 +544,11 @@ public final class FeurinfoScreen extends Screen {
     }
 
     private void drawMoves(GuiGraphics graphics, int mouseX, int mouseY) {
-        List<Row> list = rows.get(tab);
+        List<Row> list = currentRows();
+        boolean searching = filtering();
         int x0 = rightX + 6;
         int x1 = rightX + rightW - 8;
-        boolean showLevel = tab == Tab.LEVEL;
+        boolean showLevel = searching || tab == Tab.LEVEL;
         boolean showCategory = rightW >= 330;
 
         // Colonnes, de droite à gauche
@@ -484,12 +557,16 @@ public final class FeurinfoScreen extends Screen {
         int powRight = accRight - 34;
         int catX = powRight - 34 - 58;
         int typeX = (showCategory ? catX : powRight - 34) - 56;
-        int nameX = x0 + (showLevel ? 26 : 0);
+        int nameX = x0 + (showLevel ? (searching ? 48 : 26) : 0);
 
-        int headerY = panelY + 25;
+        // Nombre d'attaques, à droite de la barre de recherche
+        Component count = Component.translatable("feurinfo.moves_count", list.size());
+        drawRight(graphics, count, x1, filterY + 4, searching ? 0xFFFFD866 : 0xFF9AA4AE);
+
+        int headerY = panelY + 46;
         int gray = 0xFF9AA4AE;
         if (showLevel) {
-            graphics.drawString(font, Component.translatable("feurinfo.col.level"), x0, headerY, gray, false);
+            graphics.drawString(font, Component.translatable(searching ? "feurinfo.col.method" : "feurinfo.col.level"), x0, headerY, gray, false);
         }
         graphics.drawString(font, Component.translatable("feurinfo.col.name"), nameX, headerY, gray, false);
         graphics.drawString(font, Component.translatable("feurinfo.col.type"), typeX, headerY, gray, false);
@@ -502,19 +579,23 @@ public final class FeurinfoScreen extends Screen {
         graphics.fill(x0 - 2, listTop - 2, x1 + 2, listTop - 1, 0xFF3A4450);
 
         if (list.isEmpty()) {
-            graphics.drawCenteredString(font, Component.translatable("feurinfo.no_moves"),
-                    rightX + rightW / 2, listTop + 12, 0xFFB0B8C0);
+            Component empty = searching
+                    ? Component.translatable("feurinfo.no_match", moveFilterText.trim())
+                    : Component.translatable("feurinfo.no_moves");
+            graphics.drawCenteredString(font, empty, rightX + rightW / 2, listTop + 12, 0xFFB0B8C0);
             return;
         }
 
         int visible = visibleRows();
         scroll = Mth.clamp(scroll, 0, maxScroll());
+        int shown = Math.min(visible, list.size() - scroll);
         Row hovered = null;
 
         graphics.enableScissor(rightX + 1, listTop, rightX + rightW - 1, listBottom);
-        for (int i = 0; i < visible && scroll + i < list.size(); i++) {
+
+        // 1er passage : les fonds (lignes + cases de type)
+        for (int i = 0; i < shown; i++) {
             Row row = list.get(scroll + i);
-            MoveTemplate move = row.move();
             int y = listTop + i * ROW_H;
             boolean hover = mouseX >= x0 - 2 && mouseX < x1 + 2 && mouseY >= y && mouseY < y + ROW_H && mouseY < listBottom;
             if (hover) {
@@ -523,6 +604,17 @@ public final class FeurinfoScreen extends Screen {
             } else if ((scroll + i) % 2 == 1) {
                 graphics.fill(x0 - 2, y, x1 + 2, y + ROW_H, 0x14FFFFFF);
             }
+            int rgb = row.move().getElementalType().getHue() & 0xFFFFFF;
+            graphics.fill(typeX, y + 1, typeX + 52, y + ROW_H - 1, 0xFF000000 | rgb);
+        }
+        // On dessine les fonds maintenant, pour que le texte passe bien par-dessus
+        graphics.flush();
+
+        // 2e passage : les textes
+        for (int i = 0; i < shown; i++) {
+            Row row = list.get(scroll + i);
+            MoveTemplate move = row.move();
+            int y = listTop + i * ROW_H;
             int textY = y + 2;
             if (showLevel) {
                 graphics.drawString(font, row.level(), x0, textY, 0xFFFFD866, false);
@@ -533,7 +625,7 @@ public final class FeurinfoScreen extends Screen {
                 name = font.plainSubstrByWidth(name, Math.max(0, maxNameW - font.width("…"))) + "…";
             }
             graphics.drawString(font, name, nameX, textY, 0xFFFFFFFF, false);
-            drawType(graphics, move.getElementalType(), typeX, y + 1, 52);
+            drawTypeName(graphics, move.getElementalType(), typeX, y + 2, 52);
             if (showCategory) {
                 DamageCategory category = move.getDamageCategory();
                 graphics.drawString(font, category.getDisplayName(), catX, textY, categoryColor(category), false);
@@ -577,16 +669,16 @@ public final class FeurinfoScreen extends Screen {
         graphics.drawString(font, text, right - font.width(text), y, color, false);
     }
 
-    private void drawType(GuiGraphics graphics, ElementalType type, int x, int y, int w) {
+    /** Nom du type, en noir sur les couleurs claires et en blanc sur les foncées. */
+    private void drawTypeName(GuiGraphics graphics, ElementalType type, int x, int y, int w) {
         int rgb = type.getHue() & 0xFFFFFF;
-        graphics.fill(x, y, x + w, y + ROW_H - 2, 0xFF000000 | rgb);
         int r = (rgb >> 16) & 0xFF;
         int g = (rgb >> 8) & 0xFF;
         int b = rgb & 0xFF;
         int luminance = (r * 299 + g * 587 + b * 114) / 1000;
         int textColor = luminance > 150 ? 0xFF202020 : 0xFFFFFFFF;
         Component name = type.getDisplayName();
-        graphics.drawString(font, name, x + (w - font.width(name)) / 2, y + 1, textColor, false);
+        graphics.drawString(font, name, x + (w - font.width(name)) / 2, y, textColor, false);
     }
 
     private static int categoryColor(DamageCategory category) {

@@ -23,5 +23,14 @@
   "feurinfo.shiny.off": "☆ Normal",
   "feurinfo.form": "Form",
   "feurinfo.drag_hint": "Drag to rotate",
-  "feurinfo.tooltip.priority": "Priority: %s"
+  "feurinfo.tooltip.priority": "Priority: %s",
+  "feurinfo.filter.hint": "Search a move...",
+  "feurinfo.no_match": "This Pokémon learns no move matching \"%s\".",
+  "feurinfo.col.method": "Method",
+  "feurinfo.method.level": "Lv. %s",
+  "feurinfo.method.tm": "TM",
+  "feurinfo.method.egg": "Egg",
+  "feurinfo.method.tutor": "Tutor",
+  "feurinfo.method.evolution": "Evo",
+  "feurinfo.method.other": "Other"
 }
