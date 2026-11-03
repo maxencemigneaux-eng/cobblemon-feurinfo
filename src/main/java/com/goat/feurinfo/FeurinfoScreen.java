@@ -1,19 +1,25 @@
 package com.goat.feurinfo;
 
+import com.cobblemon.mod.common.api.abilities.AbilityTemplate;
+import com.cobblemon.mod.common.api.abilities.PotentialAbility;
 import com.cobblemon.mod.common.api.moves.MoveTemplate;
 import com.cobblemon.mod.common.api.moves.categories.DamageCategory;
 import com.cobblemon.mod.common.api.pokemon.moves.Learnset;
+import com.cobblemon.mod.common.api.pokemon.stats.Stat;
+import com.cobblemon.mod.common.api.pokemon.stats.Stats;
 import com.cobblemon.mod.common.api.types.ElementalType;
 import com.cobblemon.mod.common.client.gui.summary.widgets.ModelWidget;
 import com.cobblemon.mod.common.pokemon.FormData;
 import com.cobblemon.mod.common.pokemon.RenderablePokemon;
 import com.cobblemon.mod.common.pokemon.Species;
+import com.cobblemon.mod.common.pokemon.abilities.HiddenAbility;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
@@ -37,7 +43,8 @@ import java.util.TreeMap;
 
 /**
  * Écran /feurinfo :
- *  - à gauche : le Pokémon en 3D (Glisser pour tourner, clic = cri), sa forme (< >) et un bouton shiny ;
+ *  - à gauche : le Pokémon en 3D (Glisser pour tourner, clic = cri), sa forme (< >), un bouton shiny,
+ *    puis ses talents (survol = description) et ses stats de base ;
  *  - à droite : ses attaques par onglet (Niveau, CT, Œufs, Tuteur, Évolution, Autres),
  *    survol d'une attaque = sa description.
  */
@@ -65,6 +72,14 @@ public final class FeurinfoScreen extends Screen {
     private record Row(String level, MoveTemplate move) {
     }
 
+    private record AbilityLine(AbilityTemplate template, boolean hidden) {
+    }
+
+    /** Ordre d'affichage des stats de base. */
+    private static final Stats[] STATS = {Stats.HP, Stats.ATTACK, Stats.DEFENCE, Stats.SPECIAL_ATTACK, Stats.SPECIAL_DEFENCE, Stats.SPEED};
+    private static final String[] STAT_KEYS = {"hp", "atk", "def", "spa", "spd", "spe"};
+    private static final int INFO_ROW = 10;
+
     // --- État (conservé quand l'écran est reconstruit, ex. redimensionnement) ---
     private Species species;
     private final List<FormData> forms = new ArrayList<>();
@@ -72,6 +87,7 @@ public final class FeurinfoScreen extends Screen {
     private boolean shiny;
     private Tab tab = Tab.LEVEL;
     private final Map<Tab, List<Row>> rows = new EnumMap<>(Tab.class);
+    private final List<AbilityLine> abilities = new ArrayList<>();
     private int scroll;
     private String moveFilterText = "";
     private final List<Row> filteredRows = new ArrayList<>();
@@ -100,6 +116,8 @@ public final class FeurinfoScreen extends Screen {
     private int modelW;
     private int modelH;
     private int filterY;
+    private int formRowY;
+    private int infoY;
     private int listTop;
     private int listBottom;
 
@@ -147,6 +165,7 @@ public final class FeurinfoScreen extends Screen {
         if (species == null) {
             return;
         }
+        computeAbilities();
         Learnset learnset = form().getMoves(); // les formes sans attaques propres reprennent celles de l'espèce
 
         String evolutionLabel = I18n.get("feurinfo.level.evolution");
@@ -176,6 +195,33 @@ public final class FeurinfoScreen extends Screen {
             }
         }
         applyFilter();
+    }
+
+    /** Talents de la forme : les normaux d'abord, puis le talent caché. */
+    private void computeAbilities() {
+        abilities.clear();
+        List<AbilityLine> hidden = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (PotentialAbility potential : form().getAbilities()) {
+            AbilityTemplate template = potential.getTemplate();
+            if (!seen.add(template.getName())) {
+                continue;
+            }
+            boolean isHidden = potential instanceof HiddenAbility;
+            (isHidden ? hidden : abilities).add(new AbilityLine(template, isHidden));
+        }
+        abilities.addAll(hidden);
+    }
+
+    private static String abilityName(AbilityTemplate template) {
+        String key = template.getDisplayName();
+        return I18n.exists(key) ? I18n.get(key) : template.getName();
+    }
+
+    /** Hauteur du bloc talents + stats (sous le modèle). */
+    private int infoHeight() {
+        int abilityLines = Math.max(3, abilities.size());
+        return INFO_ROW + abilityLines * INFO_ROW + 6 + INFO_ROW + 6 * INFO_ROW + INFO_ROW + 2;
     }
 
     // --- Recherche d'attaque dans la liste du Pokémon ---
@@ -278,7 +324,10 @@ public final class FeurinfoScreen extends Screen {
         modelX = leftX + 4;
         modelY = panelY + 4;
         modelW = leftW - 8;
-        modelH = Math.max(60, panelH - 4 - 52);
+        // Sous le modèle : la ligne forme / shiny (24 px), puis les talents et les stats de base
+        modelH = Math.max(64, panelH - 4 - 24 - 4 - (species == null ? 0 : infoHeight()) - 4);
+        formRowY = modelY + modelH + 4;
+        infoY = formRowY + 24 + 2;
         filterY = panelY + 24;
         listTop = panelY + 58;
         listBottom = panelY + panelH - 4;
@@ -299,15 +348,16 @@ public final class FeurinfoScreen extends Screen {
         model = createModel();
         addRenderableWidget(model);
 
-        int rowY = modelY + modelH + 4;
+        int rowY = formRowY;
         if (forms.size() > 1) {
             addRenderableWidget(Button.builder(Component.literal("<"), b -> changeForm(-1))
                     .bounds(leftX + 4, rowY, 20, 20).build());
             addRenderableWidget(Button.builder(Component.literal(">"), b -> changeForm(1))
-                    .bounds(leftX + leftW - 24, rowY, 20, 20).build());
+                    .bounds(leftX + leftW - 48, rowY, 20, 20).build());
         }
+        // Petit bouton shiny à droite de la ligne des formes
         shinyButton = addRenderableWidget(Button.builder(shinyLabel(), b -> toggleShiny())
-                .bounds(leftX + 4, rowY + 24, leftW - 8, 20).build());
+                .bounds(leftX + leftW - 24, rowY, 20, 20).tooltip(shinyTooltip()).build());
 
         List<Tab> visible = visibleTabs();
         int gap = 2;
@@ -356,8 +406,12 @@ public final class FeurinfoScreen extends Screen {
 
     private Component shinyLabel() {
         return shiny
-                ? Component.translatable("feurinfo.shiny.on").withStyle(ChatFormatting.GOLD)
-                : Component.translatable("feurinfo.shiny.off");
+                ? Component.literal("★").withStyle(ChatFormatting.GOLD)
+                : Component.literal("☆").withStyle(ChatFormatting.GRAY);
+    }
+
+    private Tooltip shinyTooltip() {
+        return Tooltip.create(Component.translatable(shiny ? "feurinfo.shiny.on" : "feurinfo.shiny.off"));
     }
 
     // =======================================================================================
@@ -366,19 +420,14 @@ public final class FeurinfoScreen extends Screen {
 
     private void changeForm(int delta) {
         formIndex = Math.floorMod(formIndex + delta, forms.size());
-        Tab previous = tab;
         computeRows();
-        if (rows.get(previous).isEmpty() || visibleTabs().size() != tabButtons.size() || !tabButtons.containsKey(tab)) {
-            rebuildWidgets(); // la liste d'onglets a changé
-        } else {
-            replaceModel();
-            updateTabButtons();
-        }
+        rebuildWidgets(); // onglets, talents et stats peuvent changer d'une forme à l'autre
     }
 
     private void toggleShiny() {
         shiny = !shiny;
         shinyButton.setMessage(shinyLabel());
+        shinyButton.setTooltip(shinyTooltip());
         replaceModel();
     }
 
@@ -528,6 +577,14 @@ public final class FeurinfoScreen extends Screen {
                 : Component.literal(String.format("#%04d  ", species.getNationalPokedexNumber())).withStyle(ChatFormatting.GRAY)
                         .append(species.getTranslatedName().copy().withStyle(ChatFormatting.WHITE, ChatFormatting.BOLD));
         graphics.drawString(font, header, MARGIN, 12, 0xFFFFFFFF, true);
+        if (species != null) {
+            // Types de la forme, juste après le nom
+            int typeX = MARGIN + font.width(header) + 6;
+            for (ElementalType type : form().getTypes()) {
+                drawTypeIcon(graphics, type, typeX, 9, 14);
+                typeX += 16;
+            }
+        }
         if (searchError != null) {
             graphics.drawString(font, searchError, search.getX() - font.width(searchError) - 6, 12, 0xFFFF6060, true);
         }
@@ -540,15 +597,114 @@ public final class FeurinfoScreen extends Screen {
 
         graphics.drawCenteredString(font, Component.translatable("feurinfo.drag_hint").withStyle(ChatFormatting.ITALIC),
                 leftX + leftW / 2, modelY + modelH - 10, 0xFF6A7480);
-        int rowY = modelY + modelH + 4;
+        int rowY = formRowY;
         String formLabel = formName(form(), formIndex == 0);
-        int maxFormW = leftW - 56;
+        int formLeft = leftX + (forms.size() > 1 ? 26 : 4);
+        int formRight = leftX + leftW - (forms.size() > 1 ? 50 : 26);
+        int maxFormW = formRight - formLeft;
         if (font.width(formLabel) > maxFormW) {
-            formLabel = font.plainSubstrByWidth(formLabel, maxFormW - font.width("…")) + "…";
+            formLabel = font.plainSubstrByWidth(formLabel, Math.max(0, maxFormW - font.width("…"))) + "…";
         }
-        graphics.drawCenteredString(font, formLabel, leftX + leftW / 2, rowY + 6, 0xFFFFFFFF);
+        graphics.drawCenteredString(font, formLabel, (formLeft + formRight) / 2, rowY + 6, 0xFFFFFFFF);
 
+        drawInfo(graphics, mouseX, mouseY);
         drawMoves(graphics, mouseX, mouseY);
+    }
+
+    /** Talents (survol = description) et stats de base, sous le modèle 3D. */
+    private void drawInfo(GuiGraphics graphics, int mouseX, int mouseY) {
+        int x0 = leftX + 6;
+        int x1 = leftX + leftW - 6;
+        int gray = 0xFF9AA4AE;
+        int abilitiesY = infoY + INFO_ROW;
+        int statsTitleY = infoY + INFO_ROW + Math.max(3, abilities.size()) * INFO_ROW + 6;
+        int statsY = statsTitleY + INFO_ROW;
+        Map<Stat, Integer> base = form().getBaseStats();
+
+        int labelW = 0;
+        for (String key : STAT_KEYS) {
+            labelW = Math.max(labelW, font.width(I18n.get("feurinfo.stat." + key)));
+        }
+        int valueRight = x0 + labelW + 4 + font.width("255");
+        int barX = valueRight + 4;
+        int barW = Math.max(10, x1 - barX);
+
+        // 1er passage : traits, survol, barres
+        graphics.fill(x0 - 2, infoY - 2, x1 + 2, infoY - 1, 0xFF3A4450);
+        graphics.fill(x0 - 2, statsTitleY - 4, x1 + 2, statsTitleY - 3, 0xFF3A4450);
+        AbilityLine hoveredAbility = null;
+        for (int i = 0; i < abilities.size(); i++) {
+            int ry = abilitiesY + i * INFO_ROW;
+            if (mouseX >= x0 - 2 && mouseX < x1 + 2 && mouseY >= ry - 1 && mouseY < ry + INFO_ROW - 1) {
+                hoveredAbility = abilities.get(i);
+                graphics.fill(x0 - 2, ry - 1, x1 + 2, ry + INFO_ROW - 1, 0x40FFFFFF);
+            }
+        }
+        int total = 0;
+        for (int i = 0; i < STATS.length; i++) {
+            int value = base.getOrDefault(STATS[i], 0);
+            total += value;
+            int ry = statsY + i * INFO_ROW;
+            graphics.fill(barX, ry + 1, barX + barW, ry + 7, 0xFF262C33);
+            int filled = Math.round(barW * Math.min(255, value) / 255F);
+            graphics.fill(barX, ry + 1, barX + filled, ry + 7, statColor(value));
+        }
+        graphics.flush();
+
+        // 2e passage : textes
+        graphics.drawString(font, Component.translatable("feurinfo.abilities"), x0, infoY, gray, false);
+        for (int i = 0; i < abilities.size(); i++) {
+            AbilityLine line = abilities.get(i);
+            int ry = abilitiesY + i * INFO_ROW;
+            String suffix = line.hidden() ? " " + I18n.get("feurinfo.ability.hidden") : "";
+            String name = abilityName(line.template());
+            int maxW = x1 - x0 - 2 - font.width("• ") - font.width(suffix);
+            if (font.width(name) > maxW) {
+                name = font.plainSubstrByWidth(name, Math.max(0, maxW - font.width("…"))) + "…";
+            }
+            String text = "• " + name;
+            graphics.drawString(font, text, x0 + 2, ry, line.hidden() ? 0xFFC9B6FF : 0xFFFFFFFF, false);
+            if (!suffix.isEmpty()) {
+                graphics.drawString(font, suffix, x0 + 2 + font.width(text), ry, 0xFF8A949E, false);
+            }
+        }
+        if (abilities.isEmpty()) {
+            graphics.drawString(font, "—", x0 + 2, abilitiesY, gray, false);
+        }
+
+        graphics.drawString(font, Component.translatable("feurinfo.stats"), x0, statsTitleY, gray, false);
+        for (int i = 0; i < STATS.length; i++) {
+            int value = base.getOrDefault(STATS[i], 0);
+            int ry = statsY + i * INFO_ROW;
+            graphics.drawString(font, I18n.get("feurinfo.stat." + STAT_KEYS[i]), x0, ry, gray, false);
+            drawRight(graphics, Component.literal(String.valueOf(value)), valueRight, ry, 0xFFFFFFFF);
+        }
+        int totalY = statsY + STATS.length * INFO_ROW;
+        graphics.drawString(font, Component.translatable("feurinfo.stat.total"), x0, totalY, gray, false);
+        drawRight(graphics, Component.literal(String.valueOf(total)), valueRight, totalY, 0xFFFFD866);
+
+        if (hoveredAbility != null) {
+            List<FormattedCharSequence> lines = new ArrayList<>();
+            lines.add(Component.literal(abilityName(hoveredAbility.template())).withStyle(ChatFormatting.BOLD).getVisualOrderText());
+            if (hoveredAbility.hidden()) {
+                lines.add(Component.translatable("feurinfo.ability.hidden_long").withStyle(ChatFormatting.LIGHT_PURPLE).getVisualOrderText());
+            }
+            String descKey = hoveredAbility.template().getDescription();
+            if (I18n.exists(descKey)) {
+                lines.addAll(font.split(Component.literal(I18n.get(descKey)).withStyle(ChatFormatting.GRAY), 220));
+            }
+            graphics.renderTooltip(font, lines, mouseX, mouseY);
+        }
+    }
+
+    /** Couleurs des barres de stats, comme sur Showdown. */
+    private static int statColor(int value) {
+        if (value < 30) return 0xFFF34444;
+        if (value < 60) return 0xFFFF7F0F;
+        if (value < 90) return 0xFFFFDD57;
+        if (value < 120) return 0xFFA0E515;
+        if (value < 150) return 0xFF23CD5E;
+        return 0xFF00C2B8;
     }
 
     private void drawMoves(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -620,7 +776,7 @@ public final class FeurinfoScreen extends Screen {
         int iconX = typeX + (TYPE_COL_W - TYPE_ICON) / 2;
         for (int i = 0; i < shown; i++) {
             int y = listTop + i * ROW_H;
-            drawTypeIcon(graphics, list.get(scroll + i).move().getElementalType(), iconX, y + (ROW_H - TYPE_ICON) / 2);
+            drawTypeIcon(graphics, list.get(scroll + i).move().getElementalType(), iconX, y + (ROW_H - TYPE_ICON) / 2, TYPE_ICON);
         }
 
         // 2e passage : les textes
@@ -685,10 +841,10 @@ public final class FeurinfoScreen extends Screen {
     }
 
     /** Icône ronde du type, découpée dans la planche de Cobblemon (index = textureXMultiplier). */
-    private static void drawTypeIcon(GuiGraphics graphics, ElementalType type, int x, int y) {
+    private static void drawTypeIcon(GuiGraphics graphics, ElementalType type, int x, int y, int size) {
         int u = type.getTextureXMultiplier() * TYPE_ICON_SRC;
         RenderSystem.enableBlend();
-        graphics.blit(TYPE_ICONS, x, y, TYPE_ICON, TYPE_ICON, u, 0, TYPE_ICON_SRC, TYPE_ICON_SRC, TYPE_ICON_SHEET_W, TYPE_ICON_SRC);
+        graphics.blit(TYPE_ICONS, x, y, size, size, u, 0, TYPE_ICON_SRC, TYPE_ICON_SRC, TYPE_ICON_SHEET_W, TYPE_ICON_SRC);
         RenderSystem.disableBlend();
     }
 

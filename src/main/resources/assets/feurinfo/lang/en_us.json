@@ -33,5 +33,16 @@
   "feurinfo.method.tutor": "Tutor",
   "feurinfo.method.evolution": "Evo",
   "feurinfo.method.other": "Other",
-  "feurinfo.tooltip.type": "Type: %s"
+  "feurinfo.tooltip.type": "Type: %s",
+  "feurinfo.abilities": "Abilities",
+  "feurinfo.ability.hidden": "(hidden)",
+  "feurinfo.ability.hidden_long": "Hidden ability",
+  "feurinfo.stats": "Base stats",
+  "feurinfo.stat.hp": "HP",
+  "feurinfo.stat.atk": "Attack",
+  "feurinfo.stat.def": "Defense",
+  "feurinfo.stat.spa": "Sp. Atk",
+  "feurinfo.stat.spd": "Sp. Def",
+  "feurinfo.stat.spe": "Speed",
+  "feurinfo.stat.total": "Total"
 }

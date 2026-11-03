@@ -14,7 +14,9 @@ n'importe quel serveur, même si personne d'autre ne l'a.
 **À gauche — le modèle 3D**
 - Le Pokémon tourne tout seul ; **glisse** avec la souris pour le tourner, **clique** pour entendre son cri.
 - Boutons **< >** pour changer de forme (Alola, Galar, Méga, Gigamax...).
-- Bouton **★ Shiny** pour voir sa version chromatique.
+- Bouton **☆ / ★** pour voir sa version chromatique.
+- En dessous : ses **talents** (le talent caché est marqué, **survole** un talent pour lire sa description)
+  et ses **stats de base** en barres colorées, avec le total. Ses types sont affichés à côté de son nom.
 
 **À droite — les attaques**, par onglet : **Niveau**, **CT**, **Œufs**, **Tuteur**, **Évolution**, **Autres**.
 Pour chaque attaque : icône du type (la même que dans Cobblemon), catégorie, puissance, précision, PP.
